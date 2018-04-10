@@ -4,7 +4,7 @@
 use Mojolicious::Lite;
 
 app->secrets(rand());
-app->attr('music_root' => '/mnt/share/lossless/');
+app->attr('music_root' => '/music/lossless/');
 app->attr('ffmpeg' => '/usr/local/bin/ffmpeg');
 #app->log->level('error');
 app->static->paths->[0] = app->music_root;
@@ -20,9 +20,9 @@ app->hook('before_dispatch' => sub {
     my $c = shift;
     app->attr('base' => '');
     if ($c->req->headers->header('X-Forwarded-For')) {
-        my $base = $c->req->url->host;
-        $c->req->url->base->path->parse($base);
-        app->attr('base' => "/$base");
+        my $base = shift @{$c->req->url->path->leading_slash(0)};
+        push(@{$c->req->url->base->path->trailing_slash(1)}, $base);
+        app->attr('base' => $base);
         $c->app->log->debug("Request under proxy pass, app->base = '".app->base()."'");
     }
 });
@@ -41,15 +41,14 @@ get '/*file/transcode' => sub {
     $c->app->log->debug("ffmpeg($pid) CMD: '$cmd'");
 
     $c->res->headers->content_type('audio/ogg');
-    #my $stream = Mojo::IOLoop::Stream->new($ffmpeg_fh)->timeout(3600);
-    my $stream = Mojo::IOLoop::Stream->new($ffmpeg_fh);
+    my $stream = Mojo::IOLoop::Stream->new($ffmpeg_fh)->timeout(3600);
     $stream->on(read => sub {
         my ($stream, $bytes) = @_;
         $content_length += length($bytes);
         $c->write_chunk($bytes) if $c->tx;
     });
 
-#    Mojo::IOLoop->stream($c->tx->connection)->timeout(3600);
+    Mojo::IOLoop->stream($c->tx->connection)->timeout(3600);
     my $sid = Mojo::IOLoop->stream($stream);
 
     $stream->on(close => sub {
@@ -135,7 +134,6 @@ __DATA__
     </div>
     <div class="ui borderless inverted main menu">
       <div class="ui text container main ">
-%#        <a class="item" data-tooltip="loop on/off" data-inverted=""><i id="loopu" class="exchange icon"></i></a>
         <a class="item" id="loop"><i class="repeat icon"></i>Repeat Track</a>
         <a class="item" id="play"><i class="play icon"></i>Play</a>
         <a class="fitted item"><i><input id="seekbar" type="range"></i></input></a>
@@ -260,7 +258,6 @@ __DATA__
     var file = $(this).text();
     var extension = file.split('.').pop();
     $('#temp').text(file);
-//    if (player.canPlayType('audio/' + extension)) {
     if ( !!(player.canPlayType('audio/' + extension).replace(/no/, '')) ) {
       player.src = file;
       player.play();
